@@ -261,11 +261,11 @@ def render_inventory_table(is_dashboard=True):
         st.markdown("""
         <style>
             @media (max-width: 768px) {
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 900px !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 950px !important; }
                 div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(1) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
                 div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(2) { width: 160px !important; min-width: 160px !important; max-width: 160px !important; flex: none !important; }
                 div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(3) { width: 90px !important; min-width: 90px !important; max-width: 90px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(4) { width: 230px !important; min-width: 230px !important; max-width: 230px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(4) { width: 280px !important; min-width: 280px !important; max-width: 280px !important; flex: none !important; }
                 div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(5) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
                 div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(6) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
                 
@@ -367,7 +367,7 @@ def render_inventory_table(is_dashboard=True):
         header_cols = st.columns([1, 2, 1, 1.5, 1, 1.5, 1.5, 2])
         headers = ["編號", "商品名稱", "庫存數量", "入庫日期", "安全庫存", "供應商", "Tag", "備註"]
     else:
-        header_cols = st.columns([1, 2, 1, 3, 1.5, 1.5])
+        header_cols = st.columns([1, 2, 1, 3.5, 1.5, 1.5])
         headers = ["編號", "商品名稱", "庫存數量", "操作區", "入庫日期", "Tag"]
 
     for c, h in zip(header_cols, headers):
@@ -388,18 +388,30 @@ def render_inventory_table(is_dashboard=True):
             cols[6].write(item["tag"])
             cols[7].write(item["notes"])
         else:
-            cols = st.columns([1, 2, 1, 3, 1.5, 1.5])
+            cols = st.columns([1, 2, 1, 3.5, 1.5, 1.5])
             cols[0].write(str(item["item_id"]))
             cols[1].write(item["name"])
             cols[2].write(f"🔴 **{item['stock']}**" if item["stock"] <= item["safe_stock"] else str(item["stock"]))
             
             with cols[3]:
-                action_cols = st.columns([1, 1, 1.5])
+                action_cols = st.columns([1, 1, 1, 1.5])
                 with action_cols[0]:
                     st.button("➕", key=f"add_{item['page_id']}", on_click=update_stock, args=(item['page_id'], item["stock"], 1))
                 with action_cols[1]:
                     st.button("➖", key=f"sub_{item['page_id']}", on_click=update_stock, args=(item['page_id'], item["stock"], -1), disabled=(item["stock"] <= 0))
                 with action_cols[2]:
+                    with st.popover("🔢"):
+                        delta_val = st.number_input("增減數量", min_value=1, value=1, step=1, key=f"delta_{item['page_id']}")
+                        btn_col1, btn_col2 = st.columns(2)
+                        with btn_col1:
+                            if st.button("增加", key=f"bulkadd_{item['page_id']}", use_container_width=True):
+                                update_stock(item['page_id'], item["stock"], delta=delta_val)
+                                st.rerun()
+                        with btn_col2:
+                            if st.button("減少", key=f"bulksub_{item['page_id']}", use_container_width=True):
+                                update_stock(item['page_id'], item["stock"], delta=-delta_val)
+                                st.rerun()
+                with action_cols[3]:
                     with st.popover("📝"):
                         # Use a unique key for the manual stock input
                         new_val = st.number_input("設定數量", min_value=0, value=item["stock"], step=1, key=f"num_{item['page_id']}")
