@@ -70,9 +70,8 @@ def get_database_schema():
         st.error(f"Error fetching database schema: {e}")
         return None
 
-schema = get_database_schema()
-if not schema:
-    st.stop()
+schema = None
+# Schema is fetched only after successful authentication
 
 def parse_property(props, prop_name, prop_type=None):
     prop = props.get(prop_name, {})
@@ -414,32 +413,60 @@ def render_inventory_table(is_dashboard=True):
         # Add compact divider between rows
         st.markdown("<hr style='margin: 8px 0px !important; border-top: 1px solid rgba(128,128,128,0.2); min-width: 800px;' />", unsafe_allow_html=True)
 
-# Sidebar Navigation
-page = st.sidebar.radio("導覽列", ["📊 總覽 (Dashboard)", "📦 進出貨管理 (In/Outbound)"])
-
-if page == "📊 總覽 (Dashboard)":
-    st.title("📊 總覽 (Dashboard)")
-    st.markdown("檢視目前庫存狀態。")
-    render_inventory_table(is_dashboard=True)
-else:
-    st.title("📦 進出貨管理 (Inbound/Outbound)")
-    st.markdown("進階管理：更新庫存數量、新增商品紀錄。")
+if not st.session_state.get('authenticated', False):
+    st.markdown("<br><br><h2 style='text-align: center;'>🔐 系統登入 (System Login)</h2>", unsafe_allow_html=True)
     
-    with st.expander("➕ 新增商品 (Add New Product)"):
-        with st.form("new_product_form"):
-            new_id = st.number_input("編號 (不可重複)", min_value=1, step=1)
-            new_name = st.text_input("商品名稱")
-            new_supplier = st.text_input("供應商")
-            new_tag = st.text_input("Tag (標籤，以逗號分隔)")
-            new_stock = st.number_input("初始庫存", min_value=0, step=1)
-            new_safe_stock = st.number_input("安全庫存", min_value=0, step=1)
-            new_notes = st.text_area("備註")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            password = st.text_input("請輸入密碼：", type="password")
+            submitted = st.form_submit_button("登入", use_container_width=True)
             
-            if st.form_submit_button("新增送出"):
-                if new_name:
-                    add_new_product(new_name, int(new_id), int(new_stock), int(new_safe_stock), new_supplier, new_tag, new_notes)
+            if submitted:
+                if password == os.getenv("APP_PASSWORD"):
+                    st.session_state['authenticated'] = True
+                    st.rerun()
                 else:
-                    st.error("商品名稱不得為空！")
-                    
-    st.divider()
-    render_inventory_table(is_dashboard=False)
+                    st.error("密碼錯誤，請重新輸入")
+else:
+    if not schema:
+        schema = get_database_schema()
+        if not schema:
+            st.stop()
+
+    st.sidebar.markdown("### 👤 User Settings")
+    if st.sidebar.button("登出 (Logout)", use_container_width=True):
+        st.session_state['authenticated'] = False
+        st.rerun()
+        
+    st.sidebar.divider()
+
+    # Sidebar Navigation
+    page = st.sidebar.radio("導覽列", ["📊 總覽 (Dashboard)", "📦 進出貨管理 (In/Outbound)"])
+    
+    if page == "📊 總覽 (Dashboard)":
+        st.title("📊 總覽 (Dashboard)")
+        st.markdown("檢視目前庫存狀態。")
+        render_inventory_table(is_dashboard=True)
+    else:
+        st.title("📦 進出貨管理 (Inbound/Outbound)")
+        st.markdown("進階管理：更新庫存數量、新增商品紀錄。")
+        
+        with st.expander("➕ 新增商品 (Add New Product)"):
+            with st.form("new_product_form"):
+                new_id = st.number_input("編號 (不可重複)", min_value=1, step=1)
+                new_name = st.text_input("商品名稱")
+                new_supplier = st.text_input("供應商")
+                new_tag = st.text_input("Tag (標籤，以逗號分隔)")
+                new_stock = st.number_input("初始庫存", min_value=0, step=1)
+                new_safe_stock = st.number_input("安全庫存", min_value=0, step=1)
+                new_notes = st.text_area("備註")
+                
+                if st.form_submit_button("新增送出"):
+                    if new_name:
+                        add_new_product(new_name, int(new_id), int(new_stock), int(new_safe_stock), new_supplier, new_tag, new_notes)
+                    else:
+                        st.error("商品名稱不得為空！")
+                        
+        st.divider()
+        render_inventory_table(is_dashboard=False)
