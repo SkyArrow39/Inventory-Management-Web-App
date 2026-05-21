@@ -38,18 +38,19 @@ def get_database_schema():
         # Base mapping
         schema = {
             "title": "Name",
-            "id": "ID",
+            "id": "編號",
             "supplier": "供應商",
             "entry_date": "入庫日期",
             "stock": "庫存數量",
             "safe_stock": "安全庫存量",
-            "notes": "備註"
+            "notes": "備註",
+            "tag": "Tag"
         }
         
         for p_name, p_info in props.items():
             if p_info["type"] == "title":
                 schema["title"] = p_name
-            elif p_name in ["ID", "id"]:
+            elif p_name in ["編號", "ID", "id"]:
                 schema["id"] = p_name
             elif p_name in ["供應商", "Supplier"]:
                 schema["supplier"] = p_name
@@ -61,6 +62,8 @@ def get_database_schema():
                 schema["safe_stock"] = p_name
             elif p_name in ["備註", "Notes"]:
                 schema["notes"] = p_name
+            elif p_name in ["Tag", "tag", "標籤"]:
+                schema["tag"] = p_name
                 
         return schema
     except Exception as e:
@@ -71,24 +74,28 @@ schema = get_database_schema()
 if not schema:
     st.stop()
 
-def parse_property(props, prop_name, prop_type):
+def parse_property(props, prop_name, prop_type=None):
     prop = props.get(prop_name, {})
     if not prop:
         return "" if prop_type != "number" else 0
         
-    if prop_type == "title" and prop.get("title"):
+    actual_type = prop.get("type", prop_type)
+        
+    if actual_type == "title" and prop.get("title"):
         return prop["title"][0].get("plain_text", "") if prop["title"] else ""
-    elif prop_type == "number":
+    elif actual_type == "number":
         val = prop.get("number")
         return val if val is not None else 0
-    elif prop_type == "select" and prop.get("select"):
+    elif actual_type == "select" and prop.get("select"):
         return prop["select"].get("name", "")
-    elif prop_type == "date" and prop.get("date"):
+    elif actual_type == "multi_select" and prop.get("multi_select"):
+        return ", ".join([t["name"] for t in prop["multi_select"]])
+    elif actual_type == "date" and prop.get("date"):
         return prop["date"].get("start", "")
-    elif prop_type == "rich_text" and prop.get("rich_text"):
+    elif actual_type == "rich_text" and prop.get("rich_text"):
         return prop["rich_text"][0].get("plain_text", "") if prop["rich_text"] else ""
         
-    return "" if prop_type != "number" else 0
+    return "" if actual_type != "number" else 0
 
 def fetch_inventory(search_query="", low_stock_only=False):
     filter_conditions = []
@@ -119,6 +126,7 @@ def fetch_inventory(search_query="", low_stock_only=False):
             title = parse_property(props, schema["title"], "title")
             item_id = parse_property(props, schema["id"], "number")
             supplier = parse_property(props, schema["supplier"], "select")
+            tag = parse_property(props, schema["tag"])
             entry_date = parse_property(props, schema["entry_date"], "date")
             stock = parse_property(props, schema["stock"], "number")
             safe_stock = parse_property(props, schema["safe_stock"], "number")
@@ -132,6 +140,7 @@ def fetch_inventory(search_query="", low_stock_only=False):
                 "name": title,
                 "item_id": item_id,
                 "supplier": supplier,
+                "tag": tag,
                 "entry_date": entry_date,
                 "stock": stock,
                 "safe_stock": safe_stock,
@@ -186,7 +195,7 @@ def update_stock(page_id, current_stock, delta=None, new_absolute_stock=None):
         st.session_state["items"][index]["stock"] = current_stock
         st.session_state["refresh"] = True
 
-def add_new_product(name, item_id, initial_stock, safe_stock, supplier, notes):
+def add_new_product(name, item_id, initial_stock, safe_stock, supplier, tag_str, notes):
     try:
         new_props = {
             schema["title"]: {"title": [{"text": {"content": name}}]},
@@ -196,6 +205,11 @@ def add_new_product(name, item_id, initial_stock, safe_stock, supplier, notes):
         }
         if supplier:
             new_props[schema["supplier"]] = {"select": {"name": supplier}}
+        if tag_str:
+            tags = [{"name": t.strip()} for t in tag_str.split(",") if t.strip()]
+            if tags:
+                new_props[schema["tag"]] = {"multi_select": tags}
+                
         if notes:
             new_props[schema["notes"]] = {"rich_text": [{"text": {"content": notes}}]}
             
@@ -232,14 +246,15 @@ def render_inventory_table(is_dashboard=True):
         st.markdown("""
         <style>
             @media (max-width: 768px) {
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 800px !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(1) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(2) { width: 144px !important; min-width: 144px !important; max-width: 144px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(3) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(4) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(5) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(6) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(7)) > div:nth-child(7) { width: 144px !important; min-width: 144px !important; max-width: 144px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 900px !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(1) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(2) { width: 144px !important; min-width: 144px !important; max-width: 144px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(3) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(4) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(5) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(6) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(7) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(8)) > div:nth-child(8) { width: 144px !important; min-width: 144px !important; max-width: 144px !important; flex: none !important; }
             }
         </style>
         """, unsafe_allow_html=True)
@@ -247,14 +262,16 @@ def render_inventory_table(is_dashboard=True):
         st.markdown("""
         <style>
             @media (max-width: 768px) {
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 800px !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) > div:nth-child(1) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) > div:nth-child(2) { width: 180px !important; min-width: 180px !important; max-width: 180px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) > div:nth-child(3) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) > div:nth-child(4) { width: 250px !important; min-width: 250px !important; max-width: 250px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) > div:nth-child(5) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) div[data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; gap: 0.2rem !important; }
-                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5)) div[data-testid="stHorizontalBlock"] > div { width: auto !important; flex: 1 !important; min-width: 0 !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 900px !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(1) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(2) { width: 160px !important; min-width: 160px !important; max-width: 160px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(3) { width: 90px !important; min-width: 90px !important; max-width: 90px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(4) { width: 230px !important; min-width: 230px !important; max-width: 230px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(5) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div:nth-child(6) { width: 104px !important; min-width: 104px !important; max-width: 104px !important; flex: none !important; }
+                
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) div[data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; gap: 0.2rem !important; }
+                div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) div[data-testid="stHorizontalBlock"] > div { width: auto !important; flex: 1 !important; min-width: 0 !important; }
             }
         </style>
         """, unsafe_allow_html=True)
@@ -280,20 +297,33 @@ def render_inventory_table(is_dashboard=True):
 
     # Sort & Filter UI
     st.markdown("### 📊 排序與篩選 (Sort & Filter)")
-    sort_col1, sort_col2, sort_col3 = st.columns([1, 1, 2])
+    sort_col1, sort_col2, sort_col3, sort_col4 = st.columns([1, 1, 1.5, 1.5])
     with sort_col1:
-        sort_by = st.selectbox("排序依據", ["ID", "商品名稱", "庫存數量", "入庫日期"], key=f"sb_{page_key}")
+        sort_by = st.selectbox("排序依據", ["編號", "商品名稱", "庫存數量", "入庫日期"], key=f"sb_{page_key}")
     with sort_col2:
         sort_order = st.selectbox("排序方式", ["升序 (Ascending)", "降序 (Descending)"], key=f"so_{page_key}")
     with sort_col3:
         suppliers = list(set([item["supplier"] for item in st.session_state["items"] if item["supplier"]]))
         selected_suppliers = st.multiselect("供應商篩選", suppliers, key=f"supp_{page_key}")
+    with sort_col4:
+        all_tags = set()
+        for item in st.session_state["items"]:
+            if item["tag"]:
+                for t in item["tag"].split(","):
+                    if t.strip():
+                        all_tags.add(t.strip())
+        selected_tags = st.multiselect("Tag 篩選", list(all_tags), key=f"tag_{page_key}")
         
     filtered_items = st.session_state["items"]
     if selected_suppliers:
         filtered_items = [item for item in filtered_items if item["supplier"] in selected_suppliers]
+    if selected_tags:
+        filtered_items = [
+            item for item in filtered_items 
+            if item["tag"] and any(t in [it.strip() for it in item["tag"].split(",")] for t in selected_tags)
+        ]
         
-    sort_key_map = {"ID": "item_id", "商品名稱": "name", "庫存數量": "stock", "入庫日期": "entry_date"}
+    sort_key_map = {"編號": "item_id", "商品名稱": "name", "庫存數量": "stock", "入庫日期": "entry_date", "Tag": "tag"}
     reverse_sort = (sort_order == "降序 (Descending)")
     filtered_items.sort(
         key=lambda x: x[sort_key_map[sort_by]] if x[sort_key_map[sort_by]] is not None else ("", 0)[isinstance(x[sort_key_map[sort_by]], int)], 
@@ -335,11 +365,11 @@ def render_inventory_table(is_dashboard=True):
     paginated_items = filtered_items[start_idx:end_idx]
 
     if is_dashboard:
-        header_cols = st.columns([1, 2, 1, 1.5, 1, 1.5, 2])
-        headers = ["ID", "商品名稱", "庫存數量", "入庫日期", "安全庫存", "供應商", "備註"]
+        header_cols = st.columns([1, 2, 1, 1.5, 1, 1.5, 1.5, 2])
+        headers = ["編號", "商品名稱", "庫存數量", "入庫日期", "安全庫存", "供應商", "Tag", "備註"]
     else:
-        header_cols = st.columns([1, 2.5, 1.5, 3, 1.5])
-        headers = ["ID", "商品名稱", "庫存數量", "操作區", "入庫日期"]
+        header_cols = st.columns([1, 2, 1, 3, 1.5, 1.5])
+        headers = ["編號", "商品名稱", "庫存數量", "操作區", "入庫日期", "Tag"]
 
     for c, h in zip(header_cols, headers):
         c.markdown(f"<span style='font-size: 1.15em; font-weight: 700;'>{h}</span>", unsafe_allow_html=True)
@@ -349,16 +379,17 @@ def render_inventory_table(is_dashboard=True):
     
     for item in paginated_items:
         if is_dashboard:
-            cols = st.columns([1, 2, 1, 1.5, 1, 1.5, 2])
+            cols = st.columns([1, 2, 1, 1.5, 1, 1.5, 1.5, 2])
             cols[0].write(str(item["item_id"]))
             cols[1].write(item["name"])
             cols[2].write(f"🔴 **{item['stock']}**" if item["stock"] <= item["safe_stock"] else str(item["stock"]))
             cols[3].write(item["entry_date"])
             cols[4].write(str(item["safe_stock"]))
             cols[5].write(item["supplier"])
-            cols[6].write(item["notes"])
+            cols[6].write(item["tag"])
+            cols[7].write(item["notes"])
         else:
-            cols = st.columns([1, 2.5, 1.5, 3, 1.5])
+            cols = st.columns([1, 2, 1, 3, 1.5, 1.5])
             cols[0].write(str(item["item_id"]))
             cols[1].write(item["name"])
             cols[2].write(f"🔴 **{item['stock']}**" if item["stock"] <= item["safe_stock"] else str(item["stock"]))
@@ -378,6 +409,7 @@ def render_inventory_table(is_dashboard=True):
                             st.rerun()
             
             cols[4].write(item["entry_date"])
+            cols[5].write(item["tag"])
         
         # Add compact divider between rows
         st.markdown("<hr style='margin: 8px 0px !important; border-top: 1px solid rgba(128,128,128,0.2); min-width: 800px;' />", unsafe_allow_html=True)
@@ -395,16 +427,17 @@ else:
     
     with st.expander("➕ 新增商品 (Add New Product)"):
         with st.form("new_product_form"):
-            new_id = st.number_input("ID (不可重複)", min_value=1, step=1)
+            new_id = st.number_input("編號 (不可重複)", min_value=1, step=1)
             new_name = st.text_input("商品名稱")
             new_supplier = st.text_input("供應商")
+            new_tag = st.text_input("Tag (標籤，以逗號分隔)")
             new_stock = st.number_input("初始庫存", min_value=0, step=1)
             new_safe_stock = st.number_input("安全庫存", min_value=0, step=1)
             new_notes = st.text_area("備註")
             
             if st.form_submit_button("新增送出"):
                 if new_name:
-                    add_new_product(new_name, int(new_id), int(new_stock), int(new_safe_stock), new_supplier, new_notes)
+                    add_new_product(new_name, int(new_id), int(new_stock), int(new_safe_stock), new_supplier, new_tag, new_notes)
                 else:
                     st.error("商品名稱不得為空！")
                     
