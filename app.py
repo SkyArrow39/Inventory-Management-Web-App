@@ -102,7 +102,7 @@ def fetch_inventory(search_query="", low_stock_only=False):
             or_conds.append({"property": schema["id"], "number": {"equals": int(search_query)}})
         filter_conditions.append({"or": or_conds})
 
-    query_args = {"page_size": 50}
+    query_args = {"page_size": 200}
     if filter_conditions:
         query_args["filter"] = {"and": filter_conditions} if len(filter_conditions) > 1 else filter_conditions[0]
         
@@ -150,9 +150,14 @@ def fetch_inventory(search_query="", low_stock_only=False):
 def on_search_change():
     st.session_state["refresh"] = True
 
-def update_stock(page_id, index, current_stock, delta):
+def update_stock(page_id, current_stock, delta):
     new_stock = current_stock + delta
     if new_stock < 0:
+        return
+        
+    # Find index in session state
+    index = next((i for i, item in enumerate(st.session_state["items"]) if item["page_id"] == page_id), -1)
+    if index == -1:
         return
         
     # Optimistic local update
@@ -250,9 +255,74 @@ st.markdown("""
 
 # Displaying items
 st.markdown("### Inventory List")
+# Sorting, Filtering & Pagination
 if not st.session_state["items"]:
     st.info("No items found.")
 else:
+    # Sort and Filter UI
+    st.markdown("### 📊 排序與篩選 (Sort & Filter)")
+    sort_col1, sort_col2, sort_col3 = st.columns([1, 1, 2])
+    with sort_col1:
+        sort_by = st.selectbox("排序依據", ["ID", "商品名稱", "庫存數量", "入庫日期"])
+    with sort_col2:
+        sort_order = st.selectbox("排序方式", ["升序 (Ascending)", "降序 (Descending)"])
+    with sort_col3:
+        suppliers = list(set([item["supplier"] for item in st.session_state["items"] if item["supplier"]]))
+        selected_suppliers = st.multiselect("供應商篩選", suppliers)
+        
+    # Apply filtering
+    filtered_items = st.session_state["items"]
+    if selected_suppliers:
+        filtered_items = [item for item in filtered_items if item["supplier"] in selected_suppliers]
+        
+    # Apply sorting
+    sort_key_map = {
+        "ID": "item_id",
+        "商品名稱": "name",
+        "庫存數量": "stock",
+        "入庫日期": "entry_date"
+    }
+    reverse_sort = (sort_order == "降序 (Descending)")
+    filtered_items.sort(
+        key=lambda x: x[sort_key_map[sort_by]] if x[sort_key_map[sort_by]] is not None else ("", 0)[isinstance(x[sort_key_map[sort_by]], int)], 
+        reverse=reverse_sort
+    )
+
+    # Pagination UI
+    st.markdown("### 📃 分頁 (Pagination)")
+    page_col1, page_col2 = st.columns([1, 3])
+    with page_col1:
+        page_size = st.selectbox("每頁顯示筆數", [10, 20, 50], index=2)
+        
+    total_items = len(filtered_items)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    
+    if "current_page" not in st.session_state:
+        st.session_state["current_page"] = 1
+        
+    # Validate current_page
+    if st.session_state["current_page"] > total_pages:
+        st.session_state["current_page"] = total_pages
+        
+    with page_col2:
+        st.write("")
+        st.write("")
+        btn_prev, text_page, btn_next = st.columns([1, 2, 1])
+        with btn_prev:
+            if st.button("⬅️ 上一頁", disabled=(st.session_state["current_page"] == 1)):
+                st.session_state["current_page"] -= 1
+                st.rerun()
+        with text_page:
+            st.markdown(f"<div style='text-align: center;'>第 <b>{st.session_state['current_page']}</b> 頁，共 <b>{total_pages}</b> 頁 (共 {total_items} 筆)</div>", unsafe_allow_html=True)
+        with btn_next:
+            if st.button("下一頁 ➡️", disabled=(st.session_state["current_page"] == total_pages)):
+                st.session_state["current_page"] += 1
+                st.rerun()
+
+    start_idx = (st.session_state["current_page"] - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated_items = filtered_items[start_idx:end_idx]
+
     # Render table header
     header_cols = st.columns([1, 2, 1, 1.5, 1.2, 1, 1.5, 2])
     headers = ["ID", "商品名稱", "庫存數量", "入庫日期", "操作", "安全庫存", "供應商", "備註"]
@@ -262,7 +332,7 @@ else:
     st.divider()
     
     # Render rows
-    for idx, item in enumerate(st.session_state["items"]):
+    for item in paginated_items:
         cols = st.columns([1, 2, 1, 1.5, 1.2, 1, 1.5, 2])
         cols[0].write(str(item["item_id"]))
         cols[1].write(item["name"])
@@ -276,9 +346,9 @@ else:
         with cols[4]:
             btn_cols = st.columns(2)
             with btn_cols[0]:
-                st.button("➕", key=f"add_{item['page_id']}", on_click=update_stock, args=(item['page_id'], idx, item["stock"], 1))
+                st.button("➕", key=f"add_{item['page_id']}", on_click=update_stock, args=(item['page_id'], item["stock"], 1))
             with btn_cols[1]:
-                st.button("➖", key=f"sub_{item['page_id']}", on_click=update_stock, args=(item['page_id'], idx, item["stock"], -1), disabled=(item["stock"] <= 0))
+                st.button("➖", key=f"sub_{item['page_id']}", on_click=update_stock, args=(item['page_id'], item["stock"], -1), disabled=(item["stock"] <= 0))
         
         cols[5].write(str(item["safe_stock"]))
         cols[6].write(item["supplier"])
